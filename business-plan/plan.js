@@ -35,9 +35,11 @@
     level: "2",
     listingPct: 50,         // % of closings that are listing (seller) side
     mixSOI: 50, mixOffice: 30, mixZillow: 20, // relative weights, normalized
-    setHeldPct: 80,         // appt set -> held
-    heldTakenPct: 80,       // held -> taken (signed)
-    takenClosePct: 80,      // taken -> closed
+    setHeldPct: 70,         // Appointment Set -> Appointment Met
+    heldTakenPct: 80,       // Appointment Met -> Signed
+    signedUcPct: 85,        // Signed -> Under Contract
+    ucClosePct: 90,         // Under Contract -> Closed
+    convSetPct: 10,         // Conversations -> Appointment Set
     isaConverted: false,
     mentor: false,
     modelCap: true,         // model the eXp cap across the year
@@ -106,6 +108,13 @@
 
   function clampPct(v) { return Math.max(0, Math.min(100, v)); }
 
+  // Sisu rejects 0 and anything over 100. Missing values fall back to the default.
+  function clampRate(v, fallback) {
+    var n = Number(v);
+    if (!isFinite(n)) n = fallback;
+    return Math.max(1, Math.min(100, n));
+  }
+
   // ---- Main: reverse from income goal to a full plan ----
   function computePlan(s) {
     var deal = blendedDeal(s);
@@ -163,18 +172,31 @@
     var postCapTake = Wags - (BROKER_REVIEW + POSTCAP_TX); // a representative post-cap deal
 
     // ---- Production funnel (listing vs buyer) ----
+    // Conversations -> Appointment Set -> Appointment Met -> Signed -> Under Contract -> Closed.
+    // takenClosePct from older share links is ignored; the close is split into two rates.
     var sellerPct = clampPct(s.listingPct) / 100;
     var buyerPct = 1 - sellerPct;
-    var rShow = s.setHeldPct > 0 ? s.setHeldPct / 100 : 0.01;
-    var rTaken = s.heldTakenPct > 0 ? s.heldTakenPct / 100 : 0.01;
-    var rClose = s.takenClosePct > 0 ? s.takenClosePct / 100 : 0.01;
+    var rates = {
+      convSet: clampRate(s.convSetPct, STATE_DEFAULTS.convSetPct),
+      setMet: clampRate(s.setHeldPct, STATE_DEFAULTS.setHeldPct),
+      metSigned: clampRate(s.heldTakenPct, STATE_DEFAULTS.heldTakenPct),
+      signedUc: clampRate(s.signedUcPct, STATE_DEFAULTS.signedUcPct),
+      ucClose: clampRate(s.ucClosePct, STATE_DEFAULTS.ucClosePct),
+    };
+    var rSetMet = rates.setMet / 100;
+    var rMetSigned = rates.metSigned / 100;
+    var rSignedUc = rates.signedUc / 100;
+    var rUcClose = rates.ucClose / 100;
+    var rConvSet = rates.convSet / 100;
 
     function funnel(unitShare) {
       var close = Math.ceil(units * unitShare);
-      var take = Math.ceil(close / rClose);
-      var held = Math.ceil(take / rTaken);
-      var set = Math.ceil(held / rShow);
-      return { close: close, take: take, held: held, set: set };
+      var uc = Math.ceil(close / rUcClose);
+      var signed = Math.ceil(uc / rSignedUc);
+      var met = Math.ceil(signed / rMetSigned);
+      var set = Math.ceil(met / rSetMet);
+      var conversations = Math.ceil(set / rConvSet);
+      return { close: close, uc: uc, signed: signed, met: met, set: set, conversations: conversations };
     }
     var L = funnel(sellerPct); L.gci = gci * sellerPct;
     var B = funnel(buyerPct);  B.gci = gci * buyerPct;
@@ -182,16 +204,22 @@
     // ---- Cadence ----
     var d = s.timeframe > 0 ? s.timeframe : 12;
     var monthly = {
-      lClose: L.close / d, lTake: L.take / d, lHeld: L.held / d, lSet: L.set / d,
-      bClose: B.close / d, bTake: B.take / d, bHeld: B.held / d, bSet: B.set / d,
+      lClose: L.close / d, lUc: L.uc / d, lSigned: L.signed / d, lMet: L.met / d, lSet: L.set / d, lConv: L.conversations / d,
+      bClose: B.close / d, bUc: B.uc / d, bSigned: B.signed / d, bMet: B.met / d, bSet: B.set / d, bConv: B.conversations / d,
     };
     var weekly = {
+      totalConv: (L.conversations + B.conversations) / d / WEEKS_PER_MONTH,
       totalSet: (L.set + B.set) / d / WEEKS_PER_MONTH,
-      totalHeld: (L.held + B.held) / d / WEEKS_PER_MONTH,
-      lHeld: (L.held / d) / WEEKS_PER_MONTH,
-      bHeld: (B.held / d) / WEEKS_PER_MONTH,
-      totalTaken: (L.take + B.take) / d / WEEKS_PER_MONTH,
+      totalMet: (L.met + B.met) / d / WEEKS_PER_MONTH,
+      totalSigned: (L.signed + B.signed) / d / WEEKS_PER_MONTH,
+      totalUc: (L.uc + B.uc) / d / WEEKS_PER_MONTH,
     };
+
+    // Numbers an agent types into Sisu's Goal Calculator. Money math above is untouched.
+    var closedVolume = units * s.avgPrice;
+    var grossAgentPaidIncome = agg.take + expFeesTotal;
+    var volumeCommission = closedVolume * (s.commissionPct / 100);
+    var teamSplitPct = volumeCommission > 0 ? (grossAgentPaidIncome / volumeCommission) * 100 : 0;
 
     return {
       units: units,
@@ -220,6 +248,14 @@
       buyers: B,
       monthly: monthly,
       weekly: weekly,
+      sisu: {
+        closedVolume: closedVolume,
+        grossAgentPaidIncome: grossAgentPaidIncome,
+        teamSplitPct: teamSplitPct,
+        buyerPct: 100 - clampPct(s.listingPct),
+        conversations: L.conversations + B.conversations,
+        rates: rates,
+      },
     };
   }
 

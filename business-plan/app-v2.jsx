@@ -3,7 +3,23 @@
    from the Mortgage & PITI calculator. Loaded as text/babel. */
 const { useState, useEffect, useMemo, useRef } = React;
 const P = window.BlyPlan;
-const { fmtCurrency, fmtInt, fmtNum1 } = P;
+const { fmtCurrency, fmtInt } = P;
+
+function fmt1(n) {
+  const x = Number(n);
+  return (Number.isFinite(x) ? x : 0).toFixed(1);
+}
+function fmtPct(n) {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return "0%";
+  const rounded = Math.round(x * 10) / 10;
+  return (rounded % 1 === 0 ? String(rounded) : rounded.toFixed(1)) + "%";
+}
+function clampRateInput(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return 1;
+  return Math.min(100, Math.max(1, n));
+}
 
 /* ---------- atoms ---------- */
 function Slider({ label, value, min, max, step, onChange, format, fill, note }) {
@@ -95,12 +111,16 @@ function Inputs({ s, set }) {
 
       <div className="block">
         <h3 className="section-label"><b>05</b> Conversion Rates</h3>
-        <Slider label="Appt set → held" value={s.setHeldPct} min={20} max={100} step={5}
-          onChange={(v) => set("setHeldPct", v)} format={fp} />
-        <Slider label="Held → taken (signed)" value={s.heldTakenPct} min={20} max={100} step={5}
-          onChange={(v) => set("heldTakenPct", v)} format={fp} />
-        <Slider label="Taken → closed" value={s.takenClosePct} min={20} max={100} step={5}
-          onChange={(v) => set("takenClosePct", v)} format={fp} />
+        <Slider label="Conversations → Appointment Set" value={s.convSetPct} min={1} max={100} step={1}
+          onChange={(v) => set("convSetPct", clampRateInput(v))} format={fp} />
+        <Slider label="Appointment Set → Appointment Met" value={s.setHeldPct} min={1} max={100} step={1}
+          onChange={(v) => set("setHeldPct", clampRateInput(v))} format={fp} />
+        <Slider label="Appointment Met → Signed" value={s.heldTakenPct} min={1} max={100} step={1}
+          onChange={(v) => set("heldTakenPct", clampRateInput(v))} format={fp} />
+        <Slider label="Signed → Under Contract" value={s.signedUcPct} min={1} max={100} step={1}
+          onChange={(v) => set("signedUcPct", clampRateInput(v))} format={fp} />
+        <Slider label="Under Contract → Closed" value={s.ucClosePct} min={1} max={100} step={1}
+          onChange={(v) => set("ucClosePct", clampRateInput(v))} format={fp} />
       </div>
 
       <div className="block">
@@ -126,6 +146,7 @@ function ResultHero({ plan, s }) {
         </div>
         <div className="rh-chips">
           <div className="rh-chip">Gross commission<b>{fmtCurrency(plan.gci)}</b></div>
+          <div className="rh-chip">Closed volume<b>{fmtCurrency(plan.sisu.closedVolume)}</b></div>
           <div className="rh-chip">Avg take-home / deal<b>{fmtCurrency(plan.avgTakePerDeal)}</b></div>
           <div className="rh-chip">{plan.cap.modeled
             ? (plan.cap.capDeal ? <>You cap at deal<b>#{plan.cap.capDeal}</b></> : <>Annual cap<b>Not reached</b></>)
@@ -176,11 +197,14 @@ function Breakdown({ plan }) {
 }
 
 function Funnels({ plan, s }) {
+  const rates = plan.sisu.rates;
   const conv = [
-    ["Appointments set", null],
-    ["Appointments held", s.setHeldPct],
-    ["Taken / signed", s.heldTakenPct],
-    ["Closed", s.takenClosePct],
+    ["Conversations", null, "conversations"],
+    ["Appointment Set", rates.convSet, "set"],
+    ["Appointment Met", rates.setMet, "met"],
+    ["Signed", rates.metSigned, "signed"],
+    ["Under Contract", rates.signedUc, "uc"],
+    ["Closed", rates.ucClose, "close"],
   ];
   const sides = [
     { tone: "navy", label: "Listing side", pct: s.listingPct, d: plan.listings },
@@ -193,28 +217,129 @@ function Funnels({ plan, s }) {
         <div className="sc-tag">{s.timeframe === 12 ? "12-month plan" : s.timeframe + "-month plan"}</div>
       </div>
       <div className="funnel-grid">
-        {sides.map((side) => {
-          const vals = [side.d.set, side.d.held, side.d.take, side.d.close];
-          return (
-            <div key={side.tone} className={"fun " + side.tone}>
-              <div className="fun-head">
-                <div>
-                  <div className="fh-side">{side.label}</div>
-                  <div className="fh-pct">{side.pct}% of business</div>
-                </div>
-                <div className="fh-gci">{fmtCurrency(side.d.gci)}<small>gross commission</small></div>
+        {sides.map((side) => (
+          <div key={side.tone} className={"fun " + side.tone}>
+            <div className="fun-head">
+              <div>
+                <div className="fh-side">{side.label}</div>
+                <div className="fh-pct">{side.pct}% of business</div>
               </div>
-              <div className="fun-rows">
-                {conv.map(([label, rate], i) => (
-                  <div key={i} className={"frow" + (i === 3 ? " hl" : "")}>
-                    <span className="frl">{label}{rate ? <small>{rate}% convert from previous</small> : <small>top of funnel</small>}</span>
-                    <span className="frv">{fmtInt(vals[i])}</span>
-                  </div>
-                ))}
-              </div>
+              <div className="fh-gci">{fmtCurrency(side.d.gci)}<small>gross commission</small></div>
             </div>
-          );
-        })}
+            <div className="fun-rows">
+              {conv.map(([label, rate, key], i) => {
+                const count = side.d[key];
+                const volume = key === "uc" ? fmtCurrency(count * s.avgPrice) : null;
+                return (
+                  <div key={key} className={"frow" + (i === conv.length - 1 ? " hl" : "")}>
+                    <span className="frl">
+                      {label}
+                      <small>
+                        {rate ? fmtPct(rate) + " convert from previous" : "top of funnel"}
+                        {volume ? " · " + volume : ""}
+                      </small>
+                    </span>
+                    <span className="frv">{fmtInt(count)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="sld-note" style={{ marginTop: "10px" }}>{fmtInt(plan.sisu.conversations)} conversations total</div>
+    </div>
+  );
+}
+
+function SheetList({ rows }) {
+  return (
+    <div className="breakdown">
+      {rows.map(([name, val]) => (
+        <div key={name} className="bd-row">
+          <span className="bd-name">{name}</span>
+          <span className="bd-val">{val}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function monthRows(side, avgPrice, months, labels) {
+  const vol = (count) => fmtCurrency((count * avgPrice) / months);
+  const n = (count) => fmt1(count / months);
+  return [
+    ["Closed Volume ($)", vol(side.close)],
+    ["Under Contract Volume ($)", vol(side.uc)],
+    [labels.closed, n(side.close)],
+    [labels.uc, n(side.uc)],
+    [labels.signed, n(side.signed)],
+    [labels.met, n(side.met)],
+    [labels.set, n(side.set)],
+    ["Conversations", n(side.conversations)],
+  ];
+}
+
+function SisuSheet({ plan, s }) {
+  const g = plan.sisu;
+  const months = s.timeframe > 0 ? s.timeframe : 12;
+  const rates = g.rates;
+  const inputs = [
+    ["Gross Agent Paid Income Goal ($)", fmtCurrency(g.grossAgentPaidIncome)],
+    ["Average Price Point ($)", fmtCurrency(s.avgPrice)],
+    ["Average GCI %", Number(s.commissionPct).toFixed(1) + "%"],
+    ["Team Split %", g.teamSplitPct.toFixed(1) + "%"],
+    ["% of your Business that are Buyers", fmtPct(g.buyerPct)],
+    ["Under Contract to Closed %", fmtPct(rates.ucClose)],
+    ["Signed to Under Contract %", fmtPct(rates.signedUc)],
+    ["Appointment Met to Signed %", fmtPct(rates.metSigned)],
+    ["Appointment Set to Appointment Met %", fmtPct(rates.setMet)],
+    ["Conversations to Appointment Set %", fmtPct(rates.convSet)],
+  ];
+  const show = [
+    ["Closed Volume Goal", fmtCurrency(g.closedVolume)],
+    ["Average Price Point", fmtCurrency(s.avgPrice)],
+    ["Commission Goal", fmtCurrency(g.grossAgentPaidIncome)],
+    ["Sum of Monthly Listings", fmtInt(plan.listings.close)],
+    ["Sum of Monthly Buyers", fmtInt(plan.buyers.close)],
+  ];
+  const sides = [
+    ["Listing", plan.listings, {
+      closed: "Listings Closed", uc: "Listings Under Contract", signed: "Listings Signed",
+      met: "Listing Appointments Met", set: "Listing Appointments Set",
+    }],
+    ["Buyer", plan.buyers, {
+      closed: "Buyers Closed", uc: "Buyers Under Contract", signed: "Buyers Signed",
+      met: "Buyer Appointments Met", set: "Buyer Appointments Set",
+    }],
+  ];
+  return (
+    <div className="panel panel-pad" id="sisu-goal-sheet" style={{ marginTop: "20px" }}>
+      <div className="sc-head">
+        <div className="sc-title">Sisu <em>goal sheet</em></div>
+        <div className="sc-tag">Goal Calculator</div>
+      </div>
+      {s.timeframe !== 12 && (
+        <div className="sld-note" style={{ marginBottom: "12px" }}>Sisu goals are annual: switch to 12 mo before copying.</div>
+      )}
+      <div className="cad-title">Type these into Sisu</div>
+      <SheetList rows={inputs} />
+      <div className="sld-note" style={{ marginTop: "8px" }}>Increase your business % is optional, leave 0 unless you want growth.</div>
+      <div className="cad-title" style={{ marginTop: "18px" }}>What Sisu should show back</div>
+      <SheetList rows={show} />
+      <div className="cad-grid" style={{ marginTop: "16px" }}>
+        {sides.map(([title, side, labels]) => (
+          <div key={title} className="cad">
+            <div className="cad-title">Monthly · {title}</div>
+            {monthRows(side, s.avgPrice, months, labels).map(([label, val]) => (
+              <div key={label} className="cad-row"><span>{label}</span><strong>{val}</strong></div>
+            ))}
+          </div>
+        ))}
+      </div>
+      <div className="bd-row total">
+        <span className="bd-name">Closed volume / mo</span>
+        <span className="bd-val">{fmtCurrency(g.closedVolume / months)}</span>
       </div>
     </div>
   );
@@ -231,25 +356,29 @@ function Cadence({ plan, s }) {
       <div className="cad-grid">
         <div className="cad">
           <div className="cad-title">Monthly · Listing side</div>
-          <div className="cad-row"><span>Closed</span><strong>{fmtNum1(m.lClose)}</strong></div>
-          <div className="cad-row"><span>Taken</span><strong>{fmtNum1(m.lTake)}</strong></div>
-          <div className="cad-row"><span>Held</span><strong>{fmtNum1(m.lHeld)}</strong></div>
-          <div className="cad-row hl"><span>Set</span><strong>{fmtNum1(m.lSet)}</strong></div>
+          <div className="cad-row"><span>Closed</span><strong>{fmt1(m.lClose)}</strong></div>
+          <div className="cad-row"><span>Under Contract</span><strong>{fmt1(m.lUc)}</strong></div>
+          <div className="cad-row"><span>Signed</span><strong>{fmt1(m.lSigned)}</strong></div>
+          <div className="cad-row"><span>Appointment Met</span><strong>{fmt1(m.lMet)}</strong></div>
+          <div className="cad-row"><span>Appointment Set</span><strong>{fmt1(m.lSet)}</strong></div>
+          <div className="cad-row hl"><span>Conversations</span><strong>{fmt1(m.lConv)}</strong></div>
         </div>
         <div className="cad">
           <div className="cad-title">Monthly · Buyer side</div>
-          <div className="cad-row"><span>Closed</span><strong>{fmtNum1(m.bClose)}</strong></div>
-          <div className="cad-row"><span>Taken</span><strong>{fmtNum1(m.bTake)}</strong></div>
-          <div className="cad-row"><span>Held</span><strong>{fmtNum1(m.bHeld)}</strong></div>
-          <div className="cad-row hl"><span>Set</span><strong>{fmtNum1(m.bSet)}</strong></div>
+          <div className="cad-row"><span>Closed</span><strong>{fmt1(m.bClose)}</strong></div>
+          <div className="cad-row"><span>Under Contract</span><strong>{fmt1(m.bUc)}</strong></div>
+          <div className="cad-row"><span>Signed</span><strong>{fmt1(m.bSigned)}</strong></div>
+          <div className="cad-row"><span>Appointment Met</span><strong>{fmt1(m.bMet)}</strong></div>
+          <div className="cad-row"><span>Appointment Set</span><strong>{fmt1(m.bSet)}</strong></div>
+          <div className="cad-row hl"><span>Conversations</span><strong>{fmt1(m.bConv)}</strong></div>
         </div>
       </div>
       <div className="grand-total">
         <div className="gt-l">
           <span>Weekly target</span>
-          <small>{fmtNum1(wk.totalHeld)} held · {fmtNum1(wk.totalTaken)} taken per week</small>
+          <small>{fmt1(wk.totalSet)} set · {fmt1(wk.totalMet)} met · {fmt1(wk.totalSigned)} signed per week</small>
         </div>
-        <b>{fmtNum1(wk.totalSet)} <span className="per">appts set / wk</span></b>
+        <b>{fmt1(wk.totalConv)} <span className="per">conversations / wk</span></b>
       </div>
     </div>
   );
@@ -287,10 +416,11 @@ const STORAGE_KEY = "bly-business-plan-v1";
 const KEYMAP = {
   timeframe: "tf", incomeGoal: "g", avgPrice: "p", commissionPct: "c", level: "lv",
   listingPct: "ls", mixSOI: "so", mixOffice: "of", mixZillow: "zi",
-  setHeldPct: "sh", heldTakenPct: "ht", takenClosePct: "tc",
+  setHeldPct: "sh", heldTakenPct: "ht", signedUcPct: "su", ucClosePct: "uc", convSetPct: "cs",
   isaConverted: "isa", mentor: "m", modelCap: "cap",
 };
-const NUM_KEYS = ["timeframe", "incomeGoal", "avgPrice", "commissionPct", "listingPct", "mixSOI", "mixOffice", "mixZillow", "setHeldPct", "heldTakenPct", "takenClosePct"];
+const NUM_KEYS = ["timeframe", "incomeGoal", "avgPrice", "commissionPct", "listingPct", "mixSOI", "mixOffice", "mixZillow", "setHeldPct", "heldTakenPct", "signedUcPct", "ucClosePct", "convSetPct"];
+const RATE_KEYS = ["setHeldPct", "heldTakenPct", "signedUcPct", "ucClosePct", "convSetPct"];
 const BOOL_KEYS = ["isaConverted", "mentor", "modelCap"];
 
 function loadState() {
@@ -309,6 +439,9 @@ function loadState() {
       else base[k] = v;
     });
   }
+  // Older share links stored takenClosePct ("tc"). The close is two rates now; ignore the old one.
+  delete base.takenClosePct;
+  RATE_KEYS.forEach((k) => { base[k] = clampRateInput(base[k]); });
   return base;
 }
 function encodeState(s) {
@@ -365,6 +498,7 @@ function App() {
           <ResultHero plan={plan} s={s} />
           <Breakdown plan={plan} />
           <Funnels plan={plan} s={s} />
+          <SisuSheet plan={plan} s={s} />
           <Cadence plan={plan} s={s} />
           <MetaBar plan={plan} />
           <p className="disclaim">
@@ -376,7 +510,7 @@ function App() {
       <div className="sticky-cta">
         <div className="scta-text">
           <b>{plan.unreachable ? "—" : fmtInt(plan.units)} closings → {fmtCurrency(s.incomeGoal)}</b>
-          <span>{fmtNum1(plan.weekly.totalSet)} appointments set per week</span>
+          <span>{fmt1(plan.weekly.totalConv)} conversations per week</span>
         </div>
         <button className="scta-ghost" onClick={() => window.print()}>PDF</button>
         <button className="scta-btn" onClick={onShare}>

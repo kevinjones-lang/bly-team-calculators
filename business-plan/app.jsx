@@ -3,7 +3,17 @@
    renders the reverse-engineered plan. Loaded as text/babel. */
 const { useState, useEffect, useMemo, useRef } = React;
 const P = window.BlyPlan;
-const { fmtCurrency, fmtInt, fmtNum1 } = P;
+const { fmtCurrency, fmtInt } = P;
+
+function fmt1(n) {
+  const x = Number(n);
+  return (Number.isFinite(x) ? x : 0).toFixed(1);
+}
+function clampRateInput(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return 1;
+  return Math.min(100, Math.max(1, n));
+}
 
 /* ---------- atoms ---------- */
 function Slider({ label, value, min, max, step, onChange, format, accent }) {
@@ -90,12 +100,16 @@ function Sidebar({ s, set }) {
 
       <div className="side-group">
         <div className="side-group-title"><span className="n">05</span> Conversion Rates</div>
-        <Slider label="Appt set → held" value={s.setHeldPct} min={20} max={100} step={5}
-          onChange={(v) => set("setHeldPct", v)} format={fp} accent="royal" />
-        <Slider label="Held → taken (signed)" value={s.heldTakenPct} min={20} max={100} step={5}
-          onChange={(v) => set("heldTakenPct", v)} format={fp} accent="royal" />
-        <Slider label="Taken → closed" value={s.takenClosePct} min={20} max={100} step={5}
-          onChange={(v) => set("takenClosePct", v)} format={fp} accent="royal" />
+        <Slider label="Conversations → Appointment Set" value={s.convSetPct} min={1} max={100} step={1}
+          onChange={(v) => set("convSetPct", clampRateInput(v))} format={fp} accent="royal" />
+        <Slider label="Appointment Set → Appointment Met" value={s.setHeldPct} min={1} max={100} step={1}
+          onChange={(v) => set("setHeldPct", clampRateInput(v))} format={fp} accent="royal" />
+        <Slider label="Appointment Met → Signed" value={s.heldTakenPct} min={1} max={100} step={1}
+          onChange={(v) => set("heldTakenPct", clampRateInput(v))} format={fp} accent="royal" />
+        <Slider label="Signed → Under Contract" value={s.signedUcPct} min={1} max={100} step={1}
+          onChange={(v) => set("signedUcPct", clampRateInput(v))} format={fp} accent="royal" />
+        <Slider label="Under Contract → Closed" value={s.ucClosePct} min={1} max={100} step={1}
+          onChange={(v) => set("ucClosePct", clampRateInput(v))} format={fp} accent="royal" />
       </div>
 
       <div className="side-group">
@@ -206,10 +220,12 @@ function FlowCard({ plan }) {
 function FunnelCard({ side, data, pct, tone, conv }) {
   const isL = side === "listings";
   const steps = [
-    { label: "Appointments set", value: data.set, top: true },
-    { label: "Appointments held", value: data.held, conv: conv.show },
-    { label: "Taken / signed", value: data.take, conv: conv.taken },
-    { label: "Closed units", value: data.close, conv: conv.close, hl: true },
+    { label: "Conversations", value: data.conversations, top: true },
+    { label: "Appointment Set", value: data.set, conv: conv.convSet },
+    { label: "Appointment Met", value: data.met, conv: conv.setMet },
+    { label: "Signed", value: data.signed, conv: conv.metSigned },
+    { label: "Under Contract", value: data.uc, conv: conv.signedUc },
+    { label: "Closed", value: data.close, conv: conv.ucClose, hl: true },
   ];
   return (
     <div className={"funnel " + tone}>
@@ -247,7 +263,7 @@ function Cadence({ title, rows }) {
 
 /* ---------- dashboard ---------- */
 function Dashboard({ s, set, plan, onShare, onPdf }) {
-  const conv = { show: s.setHeldPct, taken: s.heldTakenPct, close: s.takenClosePct };
+  const conv = plan.sisu.rates;
   return (
     <div className="main">
       <Hero plan={plan} s={s} />
@@ -270,7 +286,7 @@ function Dashboard({ s, set, plan, onShare, onPdf }) {
       </Section>
 
       <Section eyebrow="02 — The Activity" title={s.timeframe === 12 ? "Your annual production funnel" : `Your ${s.timeframe}-month production funnel`}
-        sub="Work backward from closings through taken, held, and set appointments — split by listing and buyer side.">
+        sub="Work backward from closings through under contract, signed, met, set, and conversations — split by listing and buyer side.">
         <div className="grid-2">
           <FunnelCard side="listings" data={plan.listings} pct={s.listingPct} tone="navy" conv={conv} />
           <FunnelCard side="buyers" data={plan.buyers} pct={100 - s.listingPct} tone="royal" conv={conv} />
@@ -281,24 +297,28 @@ function Dashboard({ s, set, plan, onShare, onPdf }) {
         sub="The plan only works if it becomes a routine. Here's the pace that gets you there.">
         <div className="grid-3">
           <Cadence title="Monthly · Listing side" rows={[
-            ["Closed", fmtNum1(plan.monthly.lClose)],
-            ["Taken", fmtNum1(plan.monthly.lTake)],
-            ["Held", fmtNum1(plan.monthly.lHeld)],
-            ["Set", fmtNum1(plan.monthly.lSet), true],
+            ["Closed", fmt1(plan.monthly.lClose)],
+            ["Under Contract", fmt1(plan.monthly.lUc)],
+            ["Signed", fmt1(plan.monthly.lSigned)],
+            ["Appointment Met", fmt1(plan.monthly.lMet)],
+            ["Appointment Set", fmt1(plan.monthly.lSet)],
+            ["Conversations", fmt1(plan.monthly.lConv), true],
           ]} />
           <Cadence title="Monthly · Buyer side" rows={[
-            ["Closed", fmtNum1(plan.monthly.bClose)],
-            ["Taken", fmtNum1(plan.monthly.bTake)],
-            ["Held", fmtNum1(plan.monthly.bHeld)],
-            ["Set", fmtNum1(plan.monthly.bSet), true],
+            ["Closed", fmt1(plan.monthly.bClose)],
+            ["Under Contract", fmt1(plan.monthly.bUc)],
+            ["Signed", fmt1(plan.monthly.bSigned)],
+            ["Appointment Met", fmt1(plan.monthly.bMet)],
+            ["Appointment Set", fmt1(plan.monthly.bSet)],
+            ["Conversations", fmt1(plan.monthly.bConv), true],
           ]} />
           <div className="weekly">
             <div className="we">Weekly target</div>
-            <div className="wbig">{fmtNum1(plan.weekly.totalSet)}</div>
-            <div className="wl">appointments to set every week</div>
+            <div className="wbig">{fmt1(plan.weekly.totalConv)}</div>
+            <div className="wl">conversations every week</div>
             <div className="wsplit">
-              <div><span>Held / wk</span><strong>{fmtNum1(plan.weekly.totalHeld)}</strong></div>
-              <div><span>Taken / wk</span><strong>{fmtNum1(plan.weekly.totalTaken)}</strong></div>
+              <div><span>Set / wk</span><strong>{fmt1(plan.weekly.totalSet)}</strong></div>
+              <div><span>Met / wk</span><strong>{fmt1(plan.weekly.totalMet)}</strong></div>
             </div>
           </div>
         </div>
@@ -319,10 +339,11 @@ const STORAGE_KEY = "bly-business-plan-v1";
 const KEYMAP = {
   timeframe: "tf", incomeGoal: "g", avgPrice: "p", commissionPct: "c", level: "lv",
   listingPct: "ls", mixSOI: "so", mixOffice: "of", mixZillow: "zi",
-  setHeldPct: "sh", heldTakenPct: "ht", takenClosePct: "tc",
+  setHeldPct: "sh", heldTakenPct: "ht", signedUcPct: "su", ucClosePct: "uc", convSetPct: "cs",
   isaConverted: "isa", mentor: "m", modelCap: "cap",
 };
-const NUM_KEYS = ["timeframe", "incomeGoal", "avgPrice", "commissionPct", "listingPct", "mixSOI", "mixOffice", "mixZillow", "setHeldPct", "heldTakenPct", "takenClosePct"];
+const NUM_KEYS = ["timeframe", "incomeGoal", "avgPrice", "commissionPct", "listingPct", "mixSOI", "mixOffice", "mixZillow", "setHeldPct", "heldTakenPct", "signedUcPct", "ucClosePct", "convSetPct"];
+const RATE_KEYS = ["setHeldPct", "heldTakenPct", "signedUcPct", "ucClosePct", "convSetPct"];
 const BOOL_KEYS = ["isaConverted", "mentor", "modelCap"];
 
 function loadState() {
@@ -343,6 +364,8 @@ function loadState() {
       else base[k] = v;
     });
   }
+  delete base.takenClosePct;
+  RATE_KEYS.forEach((k) => { base[k] = clampRateInput(base[k]); });
   return base;
 }
 function encodeState(s) {
