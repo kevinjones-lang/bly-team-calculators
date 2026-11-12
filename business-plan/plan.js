@@ -115,6 +115,30 @@
     return Math.max(1, Math.min(100, n));
   }
 
+  // Team split is shown to 2 decimals. Pick the hundredth of a percent whose
+  // reverse (income / (gci% × teamSplit%)) rounds back to the same closed volume.
+  function teamSplitForVolume(income, volume, commissionPct) {
+    var gciRate = Number(commissionPct) / 100;
+    if (!(volume > 0) || !(gciRate > 0) || !(income > 0)) return 0;
+    var exactHundredths = (income / (volume * gciRate)) * 10000;
+    var base = Math.round(exactHundredths);
+    function volumeFrom(hundredths) {
+      return income / ((hundredths / 10000) * gciRate);
+    }
+    var best = base;
+    var bestScore = Infinity;
+    for (var h = base - 50; h <= base + 50; h++) {
+      if (h <= 0) continue;
+      var dollarOff = Math.abs(Math.round(volumeFrom(h)) - Math.round(volume));
+      var score = dollarOff * 100000 + Math.abs(h - exactHundredths);
+      if (score < bestScore) {
+        best = h;
+        bestScore = score;
+      }
+    }
+    return best / 100;
+  }
+
   // ---- Main: reverse from income goal to a full plan ----
   function computePlan(s) {
     var deal = blendedDeal(s);
@@ -189,17 +213,19 @@
     var rUcClose = rates.ucClose / 100;
     var rConvSet = rates.convSet / 100;
 
-    function funnel(unitShare) {
-      var close = Math.ceil(units * unitShare);
-      var uc = Math.ceil(close / rUcClose);
-      var signed = Math.ceil(uc / rSignedUc);
-      var met = Math.ceil(signed / rMetSigned);
-      var set = Math.ceil(met / rSetMet);
-      var conversations = Math.ceil(set / rConvSet);
+    function stages(close) {
+      var uc = close / rUcClose;
+      var signed = uc / rSignedUc;
+      var met = signed / rMetSigned;
+      var set = met / rSetMet;
+      var conversations = set / rConvSet;
       return { close: close, uc: uc, signed: signed, met: met, set: set, conversations: conversations };
     }
-    var L = funnel(sellerPct); L.gci = gci * sellerPct;
-    var B = funnel(buyerPct);  B.gci = gci * buyerPct;
+    // Listing closings round to the nearest deal; buyers take the remainder so the sides sum to units.
+    var lClose = Math.round(units * sellerPct);
+    var bClose = units - lClose;
+    var L = stages(lClose); L.gci = gci * sellerPct;
+    var B = stages(bClose); B.gci = gci * buyerPct;
 
     // ---- Cadence ----
     var d = s.timeframe > 0 ? s.timeframe : 12;
@@ -218,12 +244,13 @@
     // Numbers an agent types into Sisu's Goal Calculator. Money math above is untouched.
     var closedVolume = units * s.avgPrice;
     var grossAgentPaidIncome = agg.take + expFeesTotal;
-    var volumeCommission = closedVolume * (s.commissionPct / 100);
-    var teamSplitPct = volumeCommission > 0 ? (grossAgentPaidIncome / volumeCommission) * 100 : 0;
+    var teamSplitPct = teamSplitForVolume(grossAgentPaidIncome, closedVolume, s.commissionPct);
+    var overRange = units >= GUARD && cumTake < goal;
 
     return {
       units: units,
       unreachable: unreachable,
+      overRange: overRange,
       gci: gci,
       avgComm: grossPerDeal,
       avgTakePerDeal: avgTakePerDeal,

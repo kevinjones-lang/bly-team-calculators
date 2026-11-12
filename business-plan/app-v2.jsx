@@ -20,6 +20,20 @@ function clampRateInput(v) {
   if (!Number.isFinite(n)) return 1;
   return Math.min(100, Math.max(1, n));
 }
+function plainMoney(n) {
+  const x = Number(n);
+  return Number.isFinite(x) ? String(Math.round(x)) : "0";
+}
+function plainPct(n) {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return "0";
+  const rounded = Math.round(x * 10) / 10;
+  return rounded % 1 === 0 ? String(rounded) : rounded.toFixed(1);
+}
+function scrollToSisu() {
+  const el = document.getElementById("sisu-goal-sheet");
+  if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+}
 
 /* ---------- atoms ---------- */
 function Slider({ label, value, min, max, step, onChange, format, fill, note }) {
@@ -49,7 +63,7 @@ function Toggle({ label, sub, checked, onChange }) {
 }
 
 /* ---------- inputs panel ---------- */
-function Inputs({ s, set }) {
+function Inputs({ s, set, onReset }) {
   const w = P.sourceWeights(s);
   const fc = (v) => fmtCurrency(v);
   const fp = (v) => v + "%";
@@ -128,6 +142,7 @@ function Inputs({ s, set }) {
         <Toggle label="ISA-converted leads" sub="Inside sales agent set the appointment" checked={s.isaConverted} onChange={(v) => set("isaConverted", v)} />
         <Toggle label="Mentor on deals" sub="eXp mentor program deduction" checked={s.mentor} onChange={(v) => set("mentor", v)} />
         <Toggle label="Model annual cap" sub="$4,000 team cap — split stops once met" checked={s.modelCap} onChange={(v) => set("modelCap", v)} />
+        <button type="button" className="seg-btn" onClick={onReset} style={{ width: "100%", marginTop: "14px" }}>Reset</button>
       </div>
     </div>
   );
@@ -144,6 +159,11 @@ function ResultHero({ plan, s }) {
         <div className="rh-sub">
           to take home <em>{fmtCurrency(s.incomeGoal)}</em> over {months === 12 ? "the next 12 months" : months === 1 ? "one month" : `${months} months`}
         </div>
+        {plan.overRange && (
+          <div id="range-warning" className="rh-sub" style={{ marginTop: "10px", background: "rgba(255,255,255,.14)", border: "1px solid rgba(255,255,255,.28)", borderRadius: "12px", padding: "8px 12px" }}>
+            This goal is beyond the calculator's range.
+          </div>
+        )}
         <div className="rh-chips">
           <div className="rh-chip">Gross commission<b>{fmtCurrency(plan.gci)}</b></div>
           <div className="rh-chip">Closed volume<b>{fmtCurrency(plan.sisu.closedVolume)}</b></div>
@@ -151,6 +171,9 @@ function ResultHero({ plan, s }) {
           <div className="rh-chip">{plan.cap.modeled
             ? (plan.cap.capDeal ? <>You cap at deal<b>#{plan.cap.capDeal}</b></> : <>Annual cap<b>Not reached</b></>)
             : <>Cap modeling<b>Off</b></>}</div>
+          <button type="button" id="sisu-jump" className="rh-chip" onClick={scrollToSisu} style={{ textAlign: "left", font: "inherit", cursor: "pointer" }}>
+            Open<b>Sisu goal sheet</b>
+          </button>
         </div>
       </div>
     </div>
@@ -239,7 +262,7 @@ function Funnels({ plan, s }) {
                         {volume ? " · " + volume : ""}
                       </small>
                     </span>
-                    <span className="frv">{fmtInt(count)}</span>
+                    <span className="frv">{key === "conversations" ? fmtInt(count) : fmt1(count)}</span>
                   </div>
                 );
               })}
@@ -252,13 +275,21 @@ function Funnels({ plan, s }) {
   );
 }
 
-function SheetList({ rows }) {
+function SheetList({ rows, onCopy }) {
   return (
     <div className="breakdown">
-      {rows.map(([name, val]) => (
+      {rows.map(([name, val, copy]) => (
         <div key={name} className="bd-row">
           <span className="bd-name">{name}</span>
-          <span className="bd-val">{val}</span>
+          <span className="bd-val" style={{ display: "inline-flex", alignItems: "center", justifyContent: "flex-end", gap: "8px" }}>
+            <span>{val}</span>
+            {copy != null && (
+              <button type="button" className="seg-btn" data-copy={copy} onClick={() => onCopy(copy)}
+                style={{ padding: "5px 10px", fontSize: "12px", lineHeight: 1.2, flex: "none" }}>
+                Copy
+              </button>
+            )}
+          </span>
         </div>
       ))}
     </div>
@@ -280,21 +311,23 @@ function monthRows(side, avgPrice, months, labels) {
   ];
 }
 
-function SisuSheet({ plan, s }) {
+function SisuSheet({ plan, s, onCopy }) {
   const g = plan.sisu;
   const months = s.timeframe > 0 ? s.timeframe : 12;
   const rates = g.rates;
+  const gciPct = Number(s.commissionPct).toFixed(1);
+  const teamPct = g.teamSplitPct.toFixed(2);
   const inputs = [
-    ["Gross Agent Paid Income Goal ($)", fmtCurrency(g.grossAgentPaidIncome)],
-    ["Average Price Point ($)", fmtCurrency(s.avgPrice)],
-    ["Average GCI %", Number(s.commissionPct).toFixed(1) + "%"],
-    ["Team Split %", g.teamSplitPct.toFixed(1) + "%"],
-    ["% of your Business that are Buyers", fmtPct(g.buyerPct)],
-    ["Under Contract to Closed %", fmtPct(rates.ucClose)],
-    ["Signed to Under Contract %", fmtPct(rates.signedUc)],
-    ["Appointment Met to Signed %", fmtPct(rates.metSigned)],
-    ["Appointment Set to Appointment Met %", fmtPct(rates.setMet)],
-    ["Conversations to Appointment Set %", fmtPct(rates.convSet)],
+    ["Gross Agent Paid Income Goal ($)", fmtCurrency(g.grossAgentPaidIncome), plainMoney(g.grossAgentPaidIncome)],
+    ["Average Price Point ($)", fmtCurrency(s.avgPrice), plainMoney(s.avgPrice)],
+    ["Average GCI %", gciPct + "%", gciPct],
+    ["Team Split %", teamPct + "%", teamPct],
+    ["% of your Business that are Buyers", fmtPct(g.buyerPct), plainPct(g.buyerPct)],
+    ["Under Contract to Closed %", fmtPct(rates.ucClose), plainPct(rates.ucClose)],
+    ["Signed to Under Contract %", fmtPct(rates.signedUc), plainPct(rates.signedUc)],
+    ["Appointment Met to Signed %", fmtPct(rates.metSigned), plainPct(rates.metSigned)],
+    ["Appointment Set to Appointment Met %", fmtPct(rates.setMet), plainPct(rates.setMet)],
+    ["Conversations to Appointment Set %", fmtPct(rates.convSet), plainPct(rates.convSet)],
   ];
   const show = [
     ["Closed Volume Goal", fmtCurrency(g.closedVolume)],
@@ -323,7 +356,7 @@ function SisuSheet({ plan, s }) {
         <div className="sld-note" style={{ marginBottom: "12px" }}>Sisu goals are annual: switch to 12 mo before copying.</div>
       )}
       <div className="cad-title">Type these into Sisu</div>
-      <SheetList rows={inputs} />
+      <SheetList rows={inputs} onCopy={onCopy} />
       <div className="sld-note" style={{ marginTop: "8px" }}>Increase your business % is optional, leave 0 unless you want growth.</div>
       <div className="cad-title" style={{ marginTop: "18px" }}>What Sisu should show back</div>
       <SheetList rows={show} />
@@ -474,6 +507,33 @@ function App() {
     if (navigator.clipboard) navigator.clipboard.writeText(url).then(() => showToast("Link copied to clipboard"), () => showToast("Copy this URL from the address bar"));
     else showToast("Copy this URL from the address bar");
   };
+  const copyPlain = (text) => {
+    const value = String(text);
+    const done = () => showToast("Copied " + value);
+    const fallback = () => {
+      const el = document.createElement("textarea");
+      el.value = value;
+      el.setAttribute("readonly", "");
+      el.style.position = "fixed";
+      el.style.left = "-9999px";
+      document.body.appendChild(el);
+      el.select();
+      let ok = false;
+      try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+      el.remove();
+      showToast(ok ? "Copied " + value : value);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(value).then(done, fallback);
+      return;
+    }
+    fallback();
+  };
+  const onReset = () => {
+    setS({ ...P.STATE_DEFAULTS });
+    try { localStorage.removeItem(STORAGE_KEY); } catch (e) { /* ignore */ }
+    history.replaceState(null, "", location.pathname);
+  };
 
   return (
     <div className="app-wrap">
@@ -493,12 +553,12 @@ function App() {
       </header>
 
       <div className="grid">
-        <Inputs s={s} set={set} />
+        <Inputs s={s} set={set} onReset={onReset} />
         <div>
           <ResultHero plan={plan} s={s} />
           <Breakdown plan={plan} />
           <Funnels plan={plan} s={s} />
-          <SisuSheet plan={plan} s={s} />
+          <SisuSheet plan={plan} s={s} onCopy={copyPlain} />
           <Cadence plan={plan} s={s} />
           <MetaBar plan={plan} />
           <p className="disclaim">

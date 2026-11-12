@@ -240,7 +240,7 @@ function FunnelCard({ side, data, pct, tone, conv }) {
         {steps.map((st, i) => (
           <div key={i} className={"frow " + (st.top ? "top " : "") + (st.hl ? "hl" : "")}>
             <span className="frl">{st.label}{st.conv ? <b> · {st.conv}% convert</b> : ""}</span>
-            <span className="frv">{fmtInt(st.value)}</span>
+            <span className="frv">{st.label === "Conversations" ? fmtInt(st.value) : fmt1(st.value)}</span>
           </div>
         ))}
       </div>
