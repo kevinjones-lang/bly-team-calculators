@@ -65,20 +65,61 @@
     "all":  "All leases",
   };
 
-  const POST_CAP_FEES = {
-    "N/A":     0,
-    "$250/tx": 250,
-    "$75/tx":  75,
+  // Every fee amount lives here. Labels below are built from these numbers.
+  const FEES = {
+    EXP_SPLIT_RATE: 0.20,          // of the agent share before the mentor cut
+    EXP_CAP: 4000,                 // cumulative company split, then the 20% stops
+    RISK_FEE: 40,                  // per deal until RISK_ANNUAL_CAP is paid
+    RISK_ANNUAL_CAP: 500,
+    BROKER_REVIEW: 25,             // every deal
+    POSTCAP_TX: 250,               // per deal after the company cap, until POSTCAP_FEE_CAP
+    POSTCAP_TX_LO: 75,             // then this rate
+    POSTCAP_FEE_CAP: 5000,
+    ISA_SHIFT: 0.05,
+    MENTOR_SHARE: 0.15,            // of the agent share, same base as before
+    ZILLOW_REFERRAL: 0.40,
+    LEASE_RATE: 0.50,
+    NEW_AGENT_DEALS: 5,            // brand-new tier, then Level 1
+    EXPERIENCED_AGENT_DEALS: 3,    // experienced tier, then Level 1
   };
 
-  // Constants
-  const EXP_SPLIT_RATE   = 0.20; // 20% of the agent's gross share, pre-cap
-  const RISK_MGMT_FEE    = 40;   // per transaction, pre-cap
-  const BROKER_REVIEW    = 25;   // flat per transaction
-  const ISA_SHIFT        = 0.05; // ISA-converted lead shifts 5% agent -> office
-  const MENTOR_SHARE     = 0.15; // mentor takes 15% of gross (out of agent's split)
-  const ZILLOW_REFERRAL  = 0.40; // Zillow Preferred referral — taken off the top before splits
-  const LEASE_RATE       = 0.50; // lease commission = 50% of one month's rent
+  const EXP_SPLIT_RATE  = FEES.EXP_SPLIT_RATE;
+  const RISK_MGMT_FEE   = FEES.RISK_FEE;
+  const BROKER_REVIEW   = FEES.BROKER_REVIEW;
+  const ISA_SHIFT       = FEES.ISA_SHIFT;
+  const MENTOR_SHARE    = FEES.MENTOR_SHARE;
+  const ZILLOW_REFERRAL = FEES.ZILLOW_REFERRAL;
+  const LEASE_RATE      = FEES.LEASE_RATE;
+
+  const POST_CAP_FEES = {
+    "N/A": 0,
+    "$250/tx": FEES.POSTCAP_TX,
+    "$75/tx": FEES.POSTCAP_TX_LO,
+  };
+
+  function dollars(n) {
+    return "$" + Number(n).toLocaleString("en-US");
+  }
+  const LABELS = {
+    companyCap: dollars(FEES.EXP_CAP) + " cap met — 20% split stops",
+    riskCap: dollars(FEES.RISK_ANNUAL_CAP) + " annual cap",
+    zillowPct: Math.round(FEES.ZILLOW_REFERRAL * 100) + "%",
+    companyPct: Math.round(FEES.EXP_SPLIT_RATE * 100) + "%",
+    mentorPct: Math.round(FEES.MENTOR_SHARE * 100) + "%",
+    tierNote: "applies to your first " + FEES.NEW_AGENT_DEALS + " (or " + FEES.EXPERIENCED_AGENT_DEALS + ") deals, then Level 1",
+  };
+
+  // Brand-new covers the first 5 deals, Experienced the first 3, then Level 1.
+  function dealsAtTier(level) {
+    if (level === "new5") return FEES.NEW_AGENT_DEALS;
+    if (level === "exp3") return FEES.EXPERIENCED_AGENT_DEALS;
+    return null;
+  }
+  function levelForDeal(level, dealNumber) {
+    var n = dealsAtTier(level);
+    if (n != null && dealNumber > n) return "1";
+    return level;
+  }
 
   function lookup(leadSource, level, side) {
     const row = REFERENCE.find(
@@ -122,10 +163,12 @@
 
     const agentBaseShare = splitBase * agentPct;   // agent's portion before mentor
     const officeShare = splitBase * officePct;     // team/office slice
-    const mentorCut = i.mentor ? agentBaseShare * MENTOR_SHARE : 0; // 15% of the agent's portion
-    const agentGrossShare = agentBaseShare - mentorCut; // agent's portion after mentor, before eXp fees
+    // Mentor stays 15% of the agent share. The 20% company split uses that same
+    // pre-mentor share, so the two cuts do not shrink each other.
+    const mentorCut = i.mentor ? agentBaseShare * MENTOR_SHARE : 0;
+    const agentGrossShare = agentBaseShare - mentorCut;
 
-    const expCompanySplit = i.cappedExp ? 0 : agentGrossShare * EXP_SPLIT_RATE;
+    const expCompanySplit = i.cappedExp ? 0 : agentBaseShare * EXP_SPLIT_RATE;
     const riskMgmtFee = i.cappedRisk ? 0 : RISK_MGMT_FEE;
     const brokerReview = BROKER_REVIEW;
     const postCapTxFee = POST_CAP_FEES[i.postCapFee] || 0;
@@ -172,7 +215,11 @@
     LEVELS_BY_SOURCE,
     LEVEL_LABELS,
     POST_CAP_FEES,
-    constants: { EXP_SPLIT_RATE, RISK_MGMT_FEE, BROKER_REVIEW, ISA_SHIFT, MENTOR_SHARE, ZILLOW_REFERRAL, LEASE_RATE },
+    FEES,
+    LABELS,
+    constants: FEES,
+    dealsAtTier,
+    levelForDeal,
     lookup,
     compute,
     fmtUSD,

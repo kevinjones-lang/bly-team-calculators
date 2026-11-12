@@ -3,6 +3,7 @@
    renders the reverse-engineered plan. Loaded as text/babel. */
 const { useState, useEffect, useMemo, useRef } = React;
 const P = window.BlyPlan;
+const F = window.SplitEngine.FEES;
 const { fmtCurrency, fmtInt } = P;
 
 function fmt1(n) {
@@ -185,6 +186,7 @@ function FlowCard({ plan }) {
     { key: "take", cls: "s-take", dot: "#178a59", label: "You keep", val: b.take },
     { key: "exp", cls: "s-exp", dot: "#1a6fc4", label: "eXp fees", val: b.expFees },
     { key: "office", cls: "s-office", dot: "#6b85a4", label: "Team / office", val: b.office },
+    { key: "mentor", cls: "s-office", dot: "#7a5ea7", label: "Mentor", val: b.mentor },
     { key: "ref", cls: "s-ref", dot: "#c9822a", label: "Zillow referral", val: b.referral },
   ];
   const visible = segs.filter((x) => x.val > 0.5);
@@ -326,7 +328,7 @@ function Dashboard({ s, set, plan, onShare, onPdf }) {
 
       <footer className="foot">
         <div className="fdis">
-          Estimates only, based on The Bly Team commission schedule and standard eXp Realty fees ($4,000 team company-dollar cap, $40 risk-management &amp; $25 broker-review per transaction). Actual results vary with cap status, conversion, market conditions, and brokerage policy. This is a planning tool, not a guarantee of compensation.
+          Estimates only, based on The Bly Team commission schedule and standard eXp Realty fees ({fmtCurrency(F.EXP_CAP)} team company-dollar cap, {fmtCurrency(F.RISK_FEE)} risk-management until {fmtCurrency(F.RISK_ANNUAL_CAP)} a year, {fmtCurrency(F.BROKER_REVIEW)} broker-review per transaction). Actual results vary with cap status, conversion, market conditions, and brokerage policy. This is a planning tool, not a guarantee of compensation.
         </div>
         <div className="fbrand">The Bly Team · eXp Realty</div>
       </footer>

@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-<script src="engine.js"></script>
+<script src="../business-plan/engine.js"></script>
 <style>
   :root {
     --royal: #00519B;
@@ -264,6 +264,7 @@
         <div class="frow">
           <label for="level">Agent level / tier</label>
           <select class="sel" id="level"></select>
+          <p id="tierNote" style="margin:8px 0 0;font-size:12.5px;line-height:1.45;color:#5c6b7e;"></p>
         </div>
 
         <div class="panel-h" style="margin:20px -22px 14px; padding-left:0; padding-right:0; border-top:1px solid var(--line-2); border-bottom:none; padding-top:18px; padding-bottom:0;">
@@ -279,17 +280,17 @@
           <label class="check">
             <input type="checkbox" id="mentor" />
             <span class="box"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4 4 10-10"/></svg></span>
-            <span class="c-txt">Mentor on deal<span>Mentor takes 15% of your share</span></span>
+            <span class="c-txt">Mentor on deal<span id="mentorSub"></span></span>
           </label>
           <label class="check">
             <input type="checkbox" id="cappedExp" />
             <span class="box"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4 4 10-10"/></svg></span>
-            <span class="c-txt">eXp company split capped<span>$16k cap met — 20% waived</span></span>
+            <span class="c-txt">eXp company split capped<span id="capExpSub"></span></span>
           </label>
           <label class="check">
             <input type="checkbox" id="cappedRisk" />
             <span class="box"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4 4 10-10"/></svg></span>
-            <span class="c-txt">Risk-mgmt fee capped<span>$500 cap met — $40/tx waived</span></span>
+            <span class="c-txt">Risk-mgmt fee capped<span id="capRiskSub"></span></span>
           </label>
         </div>
 
@@ -389,12 +390,12 @@
     if (state.cappedRisk) tags.push("Risk capped");
     $("scenarioTags").innerHTML = tags.map((t) => `<span class="stag">${t}</span>`).join("");
 
-    const others = r.officeShare + r.mentorCut;
     const maxV = Math.max(r.gross, 1);
     const hpct = (v) => Math.max(2, (Math.max(v, 0) / maxV) * 100) + "%";
     const cols = [{ label: "Gross", cls: "gross", val: r.gross, sign: "" }];
     if (r.zillowReferral > 0) cols.push({ label: "Zillow<br>referral", cls: "ref", val: r.zillowReferral, sign: "−" });
-    cols.push({ label: "Team / office<br>&amp; mentor", cls: "office", val: others, sign: "−" });
+    cols.push({ label: "Team / office", cls: "office", val: r.officeShare, sign: "−" });
+    if (r.mentorCut > 0) cols.push({ label: "Mentor", cls: "office", val: r.mentorCut, sign: "−" });
     cols.push({ label: "eXp fees", cls: "fees", val: r.totalExpFees, sign: "−" });
     cols.push({ label: "Take-home", cls: "take", val: r.takeHome, sign: "" });
     const wf = $("wfChart");
@@ -412,18 +413,18 @@
       L.push(`<div class="lrow"><span class="ll">Gross commission <span class="pct">${pct(state.commission, commDp)} × ${f(state.price)}</span></span><span class="lv mono">${f(r.gross)}</span></div>`);
     }
     if (r.zillowReferral > 0) {
-      L.push(`<div class="lrow neg"><span class="ll">Zillow referral <span class="pct">40% off the top</span></span><span class="lv mono">−${f(r.zillowReferral)}</span></div>`);
+      L.push(`<div class="lrow neg"><span class="ll">Zillow referral <span class="pct">${E.LABELS.zillowPct} off the top</span></span><span class="lv mono">−${f(r.zillowReferral)}</span></div>`);
       L.push(`<div class="lrow subtotal"><span class="ll">Net commission to split</span><span class="lv mono">${f(r.splitBase)}</span></div>`);
     }
     L.push(`<div class="lrow section"><span class="ll">Commission split</span></div>`);
     L.push(`<div class="lrow sub"><span class="ll">Your share <span class="pct">${pct(r.agentPct)}</span></span><span class="lv mono">${f(r.agentBaseShare)}</span></div>`);
     if (r.mentorCut > 0)
-      L.push(`<div class="lrow sub neg"><span class="ll">Mentor <span class="pct">15% of your share</span></span><span class="lv mono">−${f(r.mentorCut)}</span></div>`);
+      L.push(`<div class="lrow sub neg"><span class="ll">Mentor <span class="pct">${E.LABELS.mentorPct} of your share</span></span><span class="lv mono">−${f(r.mentorCut)}</span></div>`);
     L.push(`<div class="lrow sub"><span class="ll">Team / office <span class="pct">${pct(r.officePct)}</span></span><span class="lv mono">${f(r.officeShare)}</span></div>`);
     L.push(`<div class="lrow subtotal"><span class="ll">Your share to net</span><span class="lv mono">${f(r.agentGrossShare)}</span></div>`);
 
     L.push(`<div class="lrow section"><span class="ll">Less — eXp Realty fees</span></div>`);
-    L.push(`<div class="lrow sub neg"><span class="ll">Company split ${r.expCompanySplit ? '<span class="pct">20%</span>' : '<span class="pct">capped</span>'}</span><span class="lv mono">−${f(r.expCompanySplit)}</span></div>`);
+    L.push(`<div class="lrow sub neg"><span class="ll">Company split ${r.expCompanySplit ? '<span class="pct">' + E.LABELS.companyPct + '</span>' : '<span class="pct">capped</span>'}</span><span class="lv mono">−${f(r.expCompanySplit)}</span></div>`);
     L.push(`<div class="lrow sub neg"><span class="ll">Risk management ${r.riskMgmtFee ? "" : '<span class="pct">capped</span>'}</span><span class="lv mono">−${f(r.riskMgmtFee)}</span></div>`);
     L.push(`<div class="lrow sub neg"><span class="ll">Broker review</span><span class="lv mono">−${f(r.brokerReview)}</span></div>`);
     if (r.postCapTxFee > 0)
@@ -511,6 +512,10 @@
     $("postCapWrap").classList.toggle("open", state.cappedRisk);
     $("postCapFee").value = state.postCapFee;
   }
+  $("capExpSub").textContent = E.LABELS.companyCap;
+  $("capRiskSub").textContent = E.LABELS.riskCap;
+  $("tierNote").textContent = E.LABELS.tierNote;
+  $("mentorSub").textContent = "Mentor takes " + E.LABELS.mentorPct + " of your share";
   syncUI();
   render();
 })();

@@ -3,6 +3,8 @@
    from the Mortgage & PITI calculator. Loaded as text/babel. */
 const { useState, useEffect, useMemo, useRef } = React;
 const P = window.BlyPlan;
+const F = window.SplitEngine.FEES;
+const LBL = window.SplitEngine.LABELS;
 const { fmtCurrency, fmtInt } = P;
 
 function fmt1(n) {
@@ -141,7 +143,7 @@ function Inputs({ s, set, onReset }) {
         <h3 className="section-label"><b>06</b> Adjustments</h3>
         <Toggle label="ISA-converted leads" sub="Inside sales agent set the appointment" checked={s.isaConverted} onChange={(v) => set("isaConverted", v)} />
         <Toggle label="Mentor on deals" sub="eXp mentor program deduction" checked={s.mentor} onChange={(v) => set("mentor", v)} />
-        <Toggle label="Model annual cap" sub="$4,000 team cap — split stops once met" checked={s.modelCap} onChange={(v) => set("modelCap", v)} />
+        <Toggle label="Model annual cap" sub={LBL.companyCap} checked={s.modelCap} onChange={(v) => set("modelCap", v)} />
         <button type="button" className="seg-btn" onClick={onReset} style={{ width: "100%", marginTop: "14px" }}>Reset</button>
       </div>
     </div>
@@ -186,8 +188,9 @@ function Breakdown({ plan }) {
   const segs = [
     { key: "take", color: "var(--seg-keep)", name: "You keep", sub: "after every split & fee", val: b.take },
     { key: "exp", color: "var(--seg-exp)", name: "eXp Realty", sub: "company split + transaction fees", val: b.expFees },
-    { key: "office", color: "var(--seg-office)", name: "Team / office", sub: "Bly Team split" + (b.gross && plan.breakdown.office > 0 ? "" : ""), val: b.office },
-    { key: "ref", color: "var(--seg-ref)", name: "Zillow referral", sub: "35–40% off the top on Zillow deals", val: b.referral },
+    { key: "office", color: "var(--seg-office)", name: "Team / office", sub: "Bly Team split", val: b.office },
+    { key: "mentor", color: "#7a5ea7", name: "Mentor", sub: LBL.mentorPct + " of your share", val: b.mentor },
+    { key: "ref", color: "var(--seg-ref)", name: "Zillow referral", sub: LBL.zillowPct + " off the top on Zillow deals", val: b.referral },
   ];
   const visible = segs.filter((x) => x.val > 0.5);
   return (
@@ -425,7 +428,7 @@ function MetaBar({ plan }) {
     },
     {
       icon: <svg viewBox="0 0 24 24" fill="none" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></svg>,
-      t: "$4,000 team cap", b: plan.cap.capDeal ? `Met at deal #${plan.cap.capDeal}` : "Modeled deal-by-deal",
+      t: fmtCurrency(F.EXP_CAP) + " team cap", b: plan.cap.capDeal ? `Met at deal #${plan.cap.capDeal}` : "Modeled deal-by-deal",
     },
     {
       icon: <svg viewBox="0 0 24 24" fill="none" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18" /><path d="M7 14l4-4 3 3 5-6" /></svg>,
@@ -562,7 +565,7 @@ function App() {
           <Cadence plan={plan} s={s} />
           <MetaBar plan={plan} />
           <p className="disclaim">
-            Estimates only, based on The Bly Team commission schedule and standard eXp Realty fees ($4,000 team company-dollar cap, $40 risk-management &amp; $25 broker-review per transaction). Actual results vary with cap status, conversion, market conditions, and brokerage policy. This is a planning tool, not a guarantee of compensation.
+            Estimates only, based on The Bly Team commission schedule and standard eXp Realty fees ({fmtCurrency(F.EXP_CAP)} team company-dollar cap, {fmtCurrency(F.RISK_FEE)} risk-management until {fmtCurrency(F.RISK_ANNUAL_CAP)} a year, {fmtCurrency(F.BROKER_REVIEW)} broker-review per transaction). Actual results vary with cap status, conversion, market conditions, and brokerage policy. This is a planning tool, not a guarantee of compensation.
           </p>
         </div>
       </div>

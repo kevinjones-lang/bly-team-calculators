@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-<script src="engine.js"></script>
+<script src="../business-plan/engine.js"></script>
 <style>
   :root {
     --royal: #00519B;
@@ -223,6 +223,7 @@
       <div class="fld">
         <label for="level">Your level / tier</label>
         <select class="sel" id="level"></select>
+        <p id="tierNote" style="margin:8px 0 0;font-size:12.5px;line-height:1.45;color:#5c6b7e;"></p>
       </div>
     </div>
 
@@ -231,8 +232,8 @@
       <div class="chips">
         <label class="chip-tog"><input type="checkbox" id="isa" /><span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4 4 10-10"/></svg></span> ISA-converted lead</label>
         <label class="chip-tog"><input type="checkbox" id="mentor" /><span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4 4 10-10"/></svg></span> Mentor on deal</label>
-        <label class="chip-tog"><input type="checkbox" id="cappedExp" /><span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4 4 10-10"/></svg></span> eXp split capped</label>
-        <label class="chip-tog"><input type="checkbox" id="cappedRisk" /><span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4 4 10-10"/></svg></span> Risk fee capped</label>
+        <label class="chip-tog"><input type="checkbox" id="cappedExp" /><span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4 4 10-10"/></svg></span> <span id="capExpLabel">eXp split capped</span></label>
+        <label class="chip-tog"><input type="checkbox" id="cappedRisk" /><span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4 4 10-10"/></svg></span> <span id="capRiskLabel">Risk fee capped</span></label>
       </div>
       <div class="postcap" id="postCapWrap">
         <div class="fld" style="margin-top:12px;">
@@ -257,12 +258,14 @@
         <div class="splbar-seg s-take" id="segTake"><span class="pc" id="pcTake"></span></div>
         <div class="splbar-seg s-exp" id="segExp"><span class="pc" id="pcExp"></span></div>
         <div class="splbar-seg s-office" id="segOffice"><span class="pc" id="pcOffice"></span></div>
+        <div class="splbar-seg" id="segMentor" style="width:0;background:#7a5ea7"><span class="pc" id="pcMentor"></span></div>
         <div class="splbar-seg s-ref" id="segRef" style="width:0;"><span class="pc" id="pcRef"></span></div>
       </div>
       <div class="splkey" id="splkey">
         <div class="k"><span class="kdot"><i style="background:#178a59;"></i>You keep</span><div class="kv" id="kvTake">$0</div></div>
         <div class="k"><span class="kdot"><i style="background:#1a6fc4;"></i>eXp fees</span><div class="kv" id="kvExp">$0</div></div>
         <div class="k"><span class="kdot"><i style="background:#6b85a4;"></i>Team / office</span><div class="kv" id="kvOffice">$0</div></div>
+        <div class="k" id="kMentorWrap" style="display:none;"><span class="kdot"><i style="background:#7a5ea7;"></i>Mentor</span><div class="kv" id="kvMentor">$0</div></div>
         <div class="k" id="kRefWrap" style="display:none;"><span class="kdot"><i style="background:#c9822a;"></i>Zillow referral</span><div class="kv" id="kvRef">$0</div></div>
       </div>
     </div>
@@ -314,12 +317,12 @@
     $("takeHome").innerHTML = "$" + dollars.toLocaleString("en-US") + '<span class="cents">.' + String(cents).padStart(2, "0") + "</span>";
     $("grossNote").textContent = f(r.gross);
 
-    const others = r.officeShare + r.mentorCut;
     const tot = Math.max(r.gross, 1);
-    const tp = Math.max(0, r.takeHome / tot), ep = Math.max(0, r.totalExpFees / tot), op = Math.max(0, others / tot), rp = Math.max(0, r.zillowReferral / tot);
+    const tp = Math.max(0, r.takeHome / tot), ep = Math.max(0, r.totalExpFees / tot), op = Math.max(0, r.officeShare / tot), mp = Math.max(0, r.mentorCut / tot), rp = Math.max(0, r.zillowReferral / tot);
     $("segTake").style.width = (tp * 100) + "%";
     $("segExp").style.width = (ep * 100) + "%";
     $("segOffice").style.width = (op * 100) + "%";
+    $("segMentor").style.width = (mp * 100) + "%";
     $("segRef").style.width = (rp * 100) + "%";
     $("pcTake").textContent = tp > 0.08 ? Math.round(tp * 100) + "%" : "";
     $("pcExp").textContent = ep > 0.08 ? Math.round(ep * 100) + "%" : "";
@@ -327,11 +330,13 @@
     $("pcRef").textContent = rp > 0.08 ? Math.round(rp * 100) + "%" : "";
     $("kvTake").innerHTML = f(r.takeHome) + ' <small>' + pct(tp, 0) + '</small>';
     $("kvExp").innerHTML = f(r.totalExpFees) + ' <small>' + pct(ep, 0) + '</small>';
-    $("kvOffice").innerHTML = f(others) + ' <small>' + pct(op, 0) + '</small>';
+    $("kvOffice").innerHTML = f(r.officeShare) + ' <small>' + pct(op, 0) + '</small>';
+    $("kvMentor").innerHTML = f(r.mentorCut) + ' <small>' + pct(mp, 0) + '</small>';
+    $("kMentorWrap").style.display = r.mentorCut > 0 ? "" : "none";
     $("kvRef").innerHTML = f(r.zillowReferral) + ' <small>' + pct(rp, 0) + '</small>';
     const hasRef = r.zillowReferral > 0;
     $("kRefWrap").style.display = hasRef ? "" : "none";
-    $("splkey").style.gridTemplateColumns = `repeat(${hasRef ? 4 : 3}, 1fr)`;
+    $("splkey").style.gridTemplateColumns = `repeat(${3 + (hasRef ? 1 : 0) + (r.mentorCut > 0 ? 1 : 0)}, 1fr)`;
 
     const commDp = (state.commission * 100) % 1 ? 2 : 1;
     const M = [];
@@ -341,13 +346,13 @@
       M.push(`<div class="mrow"><span class="ml">Gross commission <b>(${pct(state.commission, commDp)} of ${f(state.price)})</b></span><span class="mv">${f(r.gross)}</span></div>`);
     }
     if (r.zillowReferral > 0) {
-      M.push(`<div class="mrow neg"><span class="ml">Zillow referral <b>(40% off the top)</b></span><span class="mv">− ${f(r.zillowReferral)}</span></div>`);
+      M.push(`<div class="mrow neg"><span class="ml">Zillow referral <b>(${E.LABELS.zillowPct} off the top)</b></span><span class="mv">− ${f(r.zillowReferral)}</span></div>`);
       M.push(`<div class="mrow"><span class="ml"><b>Net commission to split</b></span><span class="mv">${f(r.splitBase)}</span></div>`);
     }
     M.push(`<div class="mrow"><span class="ml">Your split <b>(${pct(r.agentPct)})</b></span><span class="mv">${f(r.agentBaseShare)}</span></div>`);
-    if (r.mentorCut > 0) M.push(`<div class="mrow neg"><span class="ml">Mentor <b>(15% of your share)</b></span><span class="mv">− ${f(r.mentorCut)}</span></div>`);
+    if (r.mentorCut > 0) M.push(`<div class="mrow neg"><span class="ml">Mentor <b>(${E.LABELS.mentorPct} of your share)</b></span><span class="mv">− ${f(r.mentorCut)}</span></div>`);
     M.push(`<div class="mrow"><span class="ml">Team / office <b>(${pct(r.officePct)})</b></span><span class="mv">${f(r.officeShare)}</span></div>`);
-    M.push(`<div class="mrow neg"><span class="ml">eXp company split ${r.expCompanySplit ? "(20%)" : "(capped)"}</span><span class="mv">− ${f(r.expCompanySplit)}</span></div>`);
+    M.push(`<div class="mrow neg"><span class="ml">eXp company split ${r.expCompanySplit ? "(" + E.LABELS.companyPct + ")" : "(capped)"}</span><span class="mv">− ${f(r.expCompanySplit)}</span></div>`);
     M.push(`<div class="mrow neg"><span class="ml">Risk management ${r.riskMgmtFee ? "" : "(capped)"}</span><span class="mv">− ${f(r.riskMgmtFee)}</span></div>`);
     M.push(`<div class="mrow neg"><span class="ml">Broker review</span><span class="mv">− ${f(r.brokerReview)}</span></div>`);
     if (r.postCapTxFee > 0) M.push(`<div class="mrow neg"><span class="ml">Transaction fee</span><span class="mv">− ${f(r.postCapTxFee)}</span></div>`);
@@ -400,6 +405,9 @@
     $("isa").checked = state.isaConverted; $("mentor").checked = state.mentor; $("cappedExp").checked = state.cappedExp; $("cappedRisk").checked = state.cappedRisk;
     $("postCapWrap").classList.toggle("open", state.cappedRisk); $("postCapFee").value = state.postCapFee;
   })();
+  $("tierNote").textContent = E.LABELS.tierNote;
+  $("capExpLabel").textContent = "eXp split capped · " + E.LABELS.companyCap;
+  $("capRiskLabel").textContent = "Risk fee capped · " + E.LABELS.riskCap;
   render();
 })();
 </script>

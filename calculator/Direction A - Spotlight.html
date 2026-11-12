@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
-<script src="engine.js"></script>
+<script src="../business-plan/engine.js"></script>
 <style>
   :root {
     --royal: #00519B;
@@ -348,6 +348,7 @@
         <div class="field">
           <label class="lbl" for="level">Agent level / tier</label>
           <select class="sel" id="level"></select>
+          <p id="tierNote" style="margin:8px 0 0;font-size:12.5px;line-height:1.45;color:#9fb0c4;"></p>
         </div>
 
         <div class="card-title" style="margin-top:26px;"><span class="num">2</span> Adjustments &amp; fees</div>
@@ -363,21 +364,21 @@
           <label class="toggle">
             <div>
               <div class="t-label">Mentor on this deal</div>
-              <div class="t-sub">Mentor takes 15% of your share</div>
+              <div class="t-sub" id="mentorSub">Mentor takes 15% of your share</div>
             </div>
             <span class="switch"><input type="checkbox" id="mentor" /><span class="slider"></span></span>
           </label>
           <label class="toggle">
             <div>
               <div class="t-label">eXp company split capped</div>
-              <div class="t-sub">$16k cap met — 20% split waived</div>
+              <div class="t-sub" id="capExpSub"></div>
             </div>
             <span class="switch"><input type="checkbox" id="cappedExp" /><span class="slider"></span></span>
           </label>
           <label class="toggle">
             <div>
               <div class="t-label">Risk-management fee capped</div>
-              <div class="t-sub">$500 annual cap met — $40/tx waived</div>
+              <div class="t-sub" id="capRiskSub"></div>
             </div>
             <span class="switch"><input type="checkbox" id="cappedRisk" /><span class="slider"></span></span>
           </label>
@@ -412,12 +413,14 @@
           <span class="seg-take" id="barTake" style="width:60%"></span>
           <span class="seg-exp" id="barExp" style="width:10%"></span>
           <span class="seg-office" id="barOffice" style="width:30%"></span>
+          <span id="barMentor" style="width:0;background:#7a5ea7"></span>
           <span class="seg-ref" id="barRef" style="width:0%"></span>
         </div>
         <div class="legend">
           <span class="item"><span class="sw" style="background:#4ec79a;"></span>Take-home <b id="legTake">$0</b></span>
           <span class="item"><span class="sw" style="background:#2A86E0;"></span>eXp fees <b id="legExp">$0</b></span>
           <span class="item"><span class="sw" style="background:#7d97b8;"></span>Team / office <b id="legOffice">$0</b></span>
+          <span class="item" id="legMentorItem" style="display:none;"><span class="sw" style="background:#7a5ea7;"></span>Mentor <b id="legMentor">$0</b></span>
           <span class="item" id="legRefItem" style="display:none;"><span class="sw" style="background:#d9892b;"></span>Zillow referral <b id="legRef">$0</b></span>
         </div>
       </div>
@@ -514,20 +517,22 @@
     $("grossChip").textContent = E.fmtUSD(r.gross);
     $("keepPct").textContent = E.fmtPct(r.takeHomePct, 1);
 
-    // Split bar: take-home / eXp fees / office / Zillow referral
-    const others = r.officeShare + r.mentorCut;
     const totalPie = Math.max(r.gross, 1);
     const takeW = Math.max(0, (r.takeHome / totalPie) * 100);
     const expW = Math.max(0, (r.totalExpFees / totalPie) * 100);
-    const offW = Math.max(0, (others / totalPie) * 100);
+    const offW = Math.max(0, (r.officeShare / totalPie) * 100);
+    const menW = Math.max(0, (r.mentorCut / totalPie) * 100);
     const refW = Math.max(0, (r.zillowReferral / totalPie) * 100);
     $("barTake").style.width = takeW + "%";
     $("barExp").style.width = expW + "%";
     $("barOffice").style.width = offW + "%";
+    $("barMentor").style.width = menW + "%";
     $("barRef").style.width = refW + "%";
     $("legTake").textContent = E.fmtUSD(r.takeHome);
     $("legExp").textContent = E.fmtUSD(r.totalExpFees);
-    $("legOffice").textContent = E.fmtUSD(others);
+    $("legOffice").textContent = E.fmtUSD(r.officeShare);
+    $("legMentor").textContent = E.fmtUSD(r.mentorCut);
+    $("legMentorItem").style.display = r.mentorCut > 0 ? "" : "none";
     $("legRef").textContent = E.fmtUSD(r.zillowReferral);
     $("legRefItem").style.display = r.zillowReferral > 0 ? "" : "none";
 
@@ -541,16 +546,16 @@
       rows.push(`<div class="ln"><span class="ln-label">Gross commission <span class="tag">${E.fmtPct(state.commission, state.commission*100 % 1 ? 2 : 1)} of ${f(state.price)}</span></span><span class="ln-val">${f(r.gross)}</span></div>`);
     }
     if (r.zillowReferral > 0) {
-      rows.push(`<div class="ln neg"><span class="ln-label">Zillow referral <span class="tag">40% off the top</span></span><span class="ln-val">− ${f(r.zillowReferral)}</span></div>`);
+      rows.push(`<div class="ln neg"><span class="ln-label">Zillow referral <span class="tag">${E.LABELS.zillowPct} off the top</span></span><span class="ln-val">− ${f(r.zillowReferral)}</span></div>`);
       rows.push(`<div class="ln"><span class="ln-label">Net commission to split</span><span class="ln-val">${f(r.splitBase)}</span></div>`);
     }
     rows.push(`<div class="ln"><span class="ln-label">Your split <span class="tag">${E.fmtPct(r.agentPct)}</span></span><span class="ln-val">${f(r.agentBaseShare)}</span></div>`);
     if (r.mentorCut > 0)
-      rows.push(`<div class="ln neg sub"><span class="ln-label">Mentor <span class="tag">15% of your share</span></span><span class="ln-val">− ${f(r.mentorCut)}</span></div>`);
+      rows.push(`<div class="ln neg sub"><span class="ln-label">Mentor <span class="tag">${E.LABELS.mentorPct} of your share</span></span><span class="ln-val">− ${f(r.mentorCut)}</span></div>`);
     rows.push(`<div class="ln"><span class="ln-label">Team / office <span class="tag">${E.fmtPct(r.officePct)}</span></span><span class="ln-val">${f(r.officeShare)}</span></div>`);
 
     rows.push(`<div class="ln head"><span class="ln-label">eXp fees deducted from your split</span></div>`);
-    rows.push(`<div class="ln neg sub"><span class="ln-label">Company split ${r.expCompanySplit ? '<span class="tag">20%</span>' : '<span class="tag">capped</span>'}</span><span class="ln-val">− ${f(r.expCompanySplit)}</span></div>`);
+    rows.push(`<div class="ln neg sub"><span class="ln-label">Company split ${r.expCompanySplit ? '<span class="tag">' + E.LABELS.companyPct + '</span>' : '<span class="tag">capped</span>'}</span><span class="ln-val">− ${f(r.expCompanySplit)}</span></div>`);
     rows.push(`<div class="ln neg sub"><span class="ln-label">Risk management ${r.riskMgmtFee ? '' : '<span class="tag">capped</span>'}</span><span class="ln-val">− ${f(r.riskMgmtFee)}</span></div>`);
     rows.push(`<div class="ln neg sub"><span class="ln-label">Broker review</span><span class="ln-val">− ${f(r.brokerReview)}</span></div>`);
     if (r.postCapTxFee > 0)
@@ -671,6 +676,10 @@
     $("postCapWrap").classList.toggle("open", !!state.cappedRisk);
     $("postCapFee").value = state.postCapFee;
   }
+  $("capExpSub").textContent = E.LABELS.companyCap;
+  $("capRiskSub").textContent = E.LABELS.riskCap;
+  $("tierNote").textContent = E.LABELS.tierNote;
+  $("mentorSub").textContent = "Mentor takes " + E.LABELS.mentorPct + " of your share";
   syncUI();
   render();
 })();

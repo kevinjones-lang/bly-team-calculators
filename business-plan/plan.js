@@ -9,15 +9,7 @@
 (function (global) {
   "use strict";
   var E = global.SplitEngine;
-
-  // eXp annual caps / flat fees (per transaction unless noted)
-  var EXP_CAP        = 4000;  // TEAM-member company-dollar cap: 20% split stops once cumulative split hits this
-  var RISK_FEE       = 40;    // risk-management fee, per tx, pre-cap
-  var BROKER_REVIEW  = 25;    // flat per tx, always
-  var POSTCAP_TX     = 250;   // per tx after capping, until $5k paid...
-  var POSTCAP_TX_LO  = 75;    // ...then drops to $75 per tx
-  var POSTCAP_FEE_CAP = 5000; // total post-cap tx fees before the rate drops
-  var EXP_SPLIT_RATE = 0.20;
+  var F = E.FEES;
   var WEEKS_PER_MONTH = 52 / 12; // 4.333…
 
   // Map the friendly mix keys to the engine's lead-source names
@@ -67,7 +59,7 @@
   // Blend the PERCENTAGE-based commission components across the
   // (source × side) mix. These don't depend on cap state — the cap only
   // touches the flat eXp company split + per-tx fees, handled in the sim.
-  function blendedDeal(s) {
+  function blendedDeal(s, level) {
     var w = sourceWeights(s);
     var sellerW = clampPct(s.listingPct) / 100;
     var buyerW = 1 - sellerW;
@@ -86,7 +78,7 @@
           price: s.avgPrice,
           commission: s.commissionPct / 100,
           leadSource: src.name,
-          level: s.level,
+          level: level,
           side: sd.side,
           isaConverted: s.isaConverted,
           mentor: s.mentor,
@@ -141,46 +133,50 @@
 
   // ---- Main: reverse from income goal to a full plan ----
   function computePlan(s) {
-    var deal = blendedDeal(s);
-    var grossPerDeal = deal.gross;
-    var Wags = deal.agentGross;                 // weighted agent gross share / deal
-    var companyPerDealPre = Wags * EXP_SPLIT_RATE;
+    // Brand-new and Experienced apply only to the first N deals, then Level 1.
+    var introCount = E.dealsAtTier(s.level);
+    var introDeal = blendedDeal(s, s.level);
+    var laterDeal = introCount ? blendedDeal(s, "1") : introDeal;
+    function dealFor(n) {
+      return introCount && n <= introCount ? introDeal : laterDeal;
+    }
+    var grossPerDeal = introDeal.gross;
     var goal = Math.max(0, s.incomeGoal);
 
-    // Deal-by-deal simulation accumulating take-home until the goal is met.
-    var cumCompany = 0, cumTake = 0, units = 0, postTxPaid = 0, capDeal = null;
+    var cumCompany = 0, cumRisk = 0, cumTake = 0, units = 0, postTxPaid = 0, capDeal = null;
     var agg = { gross: 0, office: 0, referral: 0, mentor: 0, company: 0, flat: 0, take: 0 };
     var GUARD = 2000;
-    var preCapTake = Wags - companyPerDealPre - (RISK_FEE + BROKER_REVIEW);
-    var unreachable = preCapTake <= 0 && !(s.modelCap); // can't ever reach goal
+    var firstTake = (introDeal.agentBase - introDeal.mentor) - introDeal.agentBase * F.EXP_SPLIT_RATE - F.RISK_FEE - F.BROKER_REVIEW;
+    var unreachable = firstTake <= 0 && !(s.modelCap);
 
     while (cumTake < goal && units < GUARD) {
       units++;
-      var company, flat, postTx = 0;
-      var capActive = s.modelCap && cumCompany >= EXP_CAP;
+      var deal = dealFor(units);
+      var companyFull = deal.agentBase * F.EXP_SPLIT_RATE; // 20% before the mentor cut
+      var company, postTx = 0;
+      var capActive = s.modelCap && cumCompany >= F.EXP_CAP;
       if (capActive) {
         company = 0;
-        postTx = postTxPaid < POSTCAP_FEE_CAP ? POSTCAP_TX : POSTCAP_TX_LO;
-        flat = BROKER_REVIEW + postTx;
+        postTx = postTxPaid < F.POSTCAP_FEE_CAP ? F.POSTCAP_TX : F.POSTCAP_TX_LO;
         if (capDeal === null) capDeal = units;
+      } else if (s.modelCap) {
+        var remainingCap = F.EXP_CAP - cumCompany;
+        company = Math.min(companyFull, remainingCap);
+        if (company < companyFull && capDeal === null) capDeal = units;
       } else {
-        if (s.modelCap) {
-          var remaining = EXP_CAP - cumCompany;
-          company = Math.min(companyPerDealPre, remaining);
-          if (company < companyPerDealPre && capDeal === null) capDeal = units;
-        } else {
-          company = companyPerDealPre;
-        }
-        flat = RISK_FEE + BROKER_REVIEW;
+        company = companyFull;
       }
-      var take = Wags - company - flat;
-      // Guard against non-converging (deal nets ≤ 0): stop adding deals.
+      var riskRoom = F.RISK_ANNUAL_CAP - cumRisk;
+      var risk = riskRoom > 0 ? Math.min(F.RISK_FEE, riskRoom) : 0;
+      var flat = risk + F.BROKER_REVIEW + postTx;
+      var take = (deal.agentBase - deal.mentor) - company - flat;
       if (take <= 0 && units > 1) { units--; unreachable = true; break; }
 
       cumCompany += company;
+      cumRisk += risk;
       cumTake += take;
       postTxPaid += postTx;
-      agg.gross    += grossPerDeal;
+      agg.gross    += deal.gross;
       agg.office   += deal.office;
       agg.referral += deal.referral;
       agg.mentor   += deal.mentor;
@@ -190,10 +186,10 @@
     }
 
     var expFeesTotal = agg.company + agg.flat;
-    var othersTotal = agg.office + agg.mentor; // team/office slice (mentor folded in, like the calc)
     var gci = agg.gross;
     var avgTakePerDeal = units > 0 ? agg.take / units : 0;
-    var postCapTake = Wags - (BROKER_REVIEW + POSTCAP_TX); // a representative post-cap deal
+    var preCapTake = firstTake;
+    var postCapTake = (laterDeal.agentBase - laterDeal.mentor) - F.BROKER_REVIEW - F.POSTCAP_TX;
 
     // ---- Production funnel (listing vs buyer) ----
     // Conversations -> Appointment Set -> Appointment Met -> Signed -> Under Contract -> Closed.
@@ -260,7 +256,8 @@
       breakdown: {
         take: agg.take,
         expFees: expFeesTotal,
-        office: othersTotal,
+        office: agg.office,
+        mentor: agg.mentor,
         referral: agg.referral,
         gross: gci,
       },
